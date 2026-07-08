@@ -3,936 +3,491 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 오목 - 스마트 싱글플레이어</title>
-    <!-- Tailwind CSS CDN -->
+    <title>10x10 오목 (Human vs AI)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Fonts (Inter & Noto Sans KR) -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
-    <!-- Lucide Icons (CDN) -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: 'Inter', 'Noto Sans KR', sans-serif;
-            background-color: #0b0f19;
-            color: #f3f4f6;
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #f3f4f6; /* Tailwind gray-100 */
         }
-        /* Custom scrollbar */
-        ::-webkit-scrollbar {
-            width: 6px;
+        
+        #board-container {
+            position: relative;
+            background-color: #deb887; /* Wood color */
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            /* Make it responsive */
+            width: 100%;
+            max-width: 500px;
+            aspect-ratio: 1 / 1;
+            margin: 0 auto;
         }
-        ::-webkit-scrollbar-track {
-            background: #111827;
+
+        #board {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            grid-template-rows: repeat(10, 1fr);
+            width: 100%;
+            height: 100%;
+            position: relative;
+            z-index: 10;
         }
-        ::-webkit-scrollbar-thumb {
-            background: #374151;
-            border-radius: 3px;
+
+        .cell {
+            position: relative;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #4b5563;
+
+        /* Lines for the board */
+        .cell::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background-color: #333;
+            z-index: 1;
         }
-        /* Custom board container shadows */
-        .board-shadow {
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(99, 102, 241, 0.05);
+
+        .cell::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 50%;
+            width: 1px;
+            background-color: #333;
+            z-index: 1;
         }
+
+        /* Edge cell line adjustments to not stick out */
+        .cell[data-row="0"]::after { top: 50%; }
+        .cell[data-row="9"]::after { bottom: 50%; }
+        .cell[data-col="0"]::before { left: 50%; }
+        .cell[data-col="9"]::before { right: 50%; }
+
+        /* Preview stone (dotted) for hover */
+        .preview-stone {
+            position: absolute;
+            width: 80%;
+            height: 80%;
+            border-radius: 50%;
+            border: 2px dashed rgba(0, 0, 0, 0.6);
+            background-color: rgba(0, 0, 0, 0.1);
+            opacity: 0;
+            z-index: 15;
+            pointer-events: none;
+            transition: opacity 0.1s;
+        }
+
+        /* Show preview only when it's player's turn and cell is not occupied */
+        #board.player-turn .cell:not(.occupied):hover .preview-stone {
+            opacity: 1;
+        }
+
+        /* The stones */
+        .stone {
+            width: 80%;
+            height: 80%;
+            border-radius: 50%;
+            z-index: 20;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.4);
+            transition: all 0.2s ease-in-out;
+            transform: scale(0); /* For animation */
+        }
+
+        .stone.placed {
+            transform: scale(1);
+        }
+
+        .stone.black {
+            background: radial-gradient(circle at 30% 30%, #555, #000);
+        }
+
+        .stone.white {
+            background: radial-gradient(circle at 30% 30%, #fff, #ccc);
+            /* White stone needs a tiny border to stand out sometimes */
+            border: 1px solid #ddd;
+        }
+        
+        .stone.recent {
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.5); /* Highlight last move */
+        }
+
+        /* Overlay for end game */
+        #game-over-overlay {
+            position: absolute;
+            inset: 0;
+            background-color: rgba(255,255,255,0.8);
+            z-index: 30;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-radius: 8px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        #game-over-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
     </style>
 </head>
-<body class="min-h-screen flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
+<body class="min-h-screen flex flex-col">
 
-    <!-- Navigation Bar -->
-    <header class="sticky top-0 z-40 bg-gray-900/80 backdrop-blur-md border-b border-gray-800">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between h-16">
-                <div class="flex items-center gap-3">
-                    <div class="bg-gradient-to-tr from-indigo-500 to-purple-500 p-2 rounded-xl shadow-lg shadow-indigo-500/20">
-                        <i data-lucide="circle-dot" class="w-6 h-6 text-white"></i>
-                    </div>
-                    <div>
-                        <span class="text-xl font-black bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">AI OMOK</span>
-                        <span class="text-xs block text-gray-400 tracking-wider font-semibold -mt-1">INTELLIGENT SINGLEPLAY</span>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2">
-                    <span class="px-2.5 py-1 text-xs font-semibold bg-gray-800 text-indigo-300 border border-gray-700 rounded-full flex items-center gap-1">
-                        <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span> AI 대전 대기중
-                    </span>
-                </div>
-            </div>
-        </div>
+    <!-- Header -->
+    <header class="bg-gray-800 text-white p-4 shadow-md text-center">
+        <h1 class="text-3xl font-bold tracking-wider">10x10 오목</h1>
+        <p class="text-sm text-gray-300 mt-1">플레이어 (흑) vs 인공지능 (백)</p>
     </header>
 
-    <!-- Main Game Section -->
-    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col lg:flex-row gap-8 items-stretch">
+    <!-- Main Content -->
+    <main class="flex-grow flex flex-col items-center justify-center p-4">
         
-        <!-- Sidebar / Game Controls -->
-        <section class="w-full lg:w-80 flex flex-col gap-5 shrink-0">
-            <!-- Game Status & Turn Indicator Card -->
-            <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-xl space-y-4">
-                <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest">실시간 매칭 정보</h2>
-                
-                <div class="grid grid-cols-2 gap-3">
-                    <!-- Player Card -->
-                    <div id="player-card" class="bg-indigo-950/20 border border-indigo-500/30 rounded-xl p-3 flex flex-col items-center transition-all">
-                        <div class="w-8 h-8 rounded-full bg-black border-2 border-gray-600 flex items-center justify-center text-xs font-bold text-white shadow-md">黒</div>
-                        <span class="text-sm font-bold text-white mt-2">나 (Player)</span>
-                        <span class="text-2xs text-gray-400 mt-0.5">선공 (흑돌)</span>
-                    </div>
-                    
-                    <!-- AI Card -->
-                    <div id="ai-card" class="bg-gray-950/40 border border-transparent rounded-xl p-3 flex flex-col items-center transition-all">
-                        <div class="w-8 h-8 rounded-full bg-white border-2 border-gray-300 flex items-center justify-center text-xs font-bold text-black shadow-md">白</div>
-                        <span class="text-sm font-bold text-white mt-2">인공지능 (AI)</span>
-                        <span class="text-2xs text-gray-400 mt-0.5">후공 (백돌)</span>
-                    </div>
-                </div>
-
-                <div class="bg-gray-950 rounded-xl p-3 border border-gray-800/80 text-center">
-                    <span class="text-2xs font-bold text-gray-400 block mb-1">현재 차례</span>
-                    <div id="turn-banner" class="text-md font-bold text-indigo-400 flex items-center justify-center gap-1.5">
-                        <span class="inline-block w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                        당신의 차례입니다
-                    </div>
-                </div>
+        <!-- Status and Controls -->
+        <div class="w-full max-w-lg flex justify-between items-center mb-6 bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+            <div class="flex items-center space-x-3">
+                <div id="turn-indicator" class="w-6 h-6 rounded-full bg-black shadow-md transition-colors duration-300"></div>
+                <span id="status-text" class="font-semibold text-lg text-gray-800">플레이어(흑) 차례</span>
             </div>
+            <button id="reset-btn" class="px-4 py-2 bg-indigo-600 text-white font-medium rounded hover:bg-indigo-700 transition shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50">
+                새 게임
+            </button>
+        </div>
 
-            <!-- Settings Card -->
-            <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-xl space-y-4">
-                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">게임 설정</h3>
-                
-                <!-- Board Size Selector -->
-                <div class="space-y-1.5">
-                    <label class="text-xs text-gray-400 font-semibold flex items-center gap-1">
-                        <i data-lucide="grid-3x3" class="w-3.5 h-3.5"></i>바둑판 크기
-                    </label>
-                    <div class="grid grid-cols-2 gap-2">
-                        <button onclick="changeBoardSize(15)" id="btn-size-15" class="size-btn px-3 py-2 rounded-lg text-xs font-semibold border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 transition-all">
-                            15 x 15 (표준)
-                        </button>
-                        <button onclick="changeBoardSize(19)" id="btn-size-19" class="size-btn px-3 py-2 rounded-lg text-xs font-semibold border border-transparent bg-gray-950 text-gray-400 hover:text-gray-200 transition-all">
-                            19 x 19 (프로)
-                        </button>
-                    </div>
-                </div>
-
-                <!-- AI Difficulty -->
-                <div class="space-y-1.5">
-                    <label class="text-xs text-gray-400 font-semibold flex items-center gap-1">
-                        <i data-lucide="sliders" class="w-3.5 h-3.5"></i>인공지능 난이도
-                    </label>
-                    <div class="grid grid-cols-3 gap-1.5">
-                        <button onclick="changeDifficulty('easy')" id="btn-diff-easy" class="diff-btn px-2 py-1.5 rounded-lg text-2xs font-semibold border border-transparent bg-gray-950 text-gray-400 hover:text-gray-200 transition-all">쉬움</button>
-                        <button onclick="changeDifficulty('normal')" id="btn-diff-normal" class="diff-btn px-2 py-1.5 rounded-lg text-2xs font-semibold border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 transition-all">보통</button>
-                        <button onclick="changeDifficulty('hard')" id="btn-diff-hard" class="diff-btn px-2 py-1.5 rounded-lg text-2xs font-semibold border border-transparent bg-gray-950 text-gray-400 hover:text-gray-200 transition-all">어려움</button>
-                    </div>
-                </div>
-
-                <!-- Sound Effects Toggle -->
-                <div class="flex items-center justify-between pt-1 border-t border-gray-800/80">
-                    <span class="text-xs text-gray-400 font-semibold flex items-center gap-1">
-                        <i data-lucide="volume-2" class="w-3.5 h-3.5"></i>타격 효과음
-                    </span>
-                    <button onclick="toggleSound()" id="sound-toggle-btn" class="px-3 py-1 bg-gray-950 border border-gray-800 text-indigo-400 text-xs rounded-full font-bold transition">
-                        ON
-                    </button>
-                </div>
-            </div>
-
-            <!-- Stats & History Card -->
-            <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-xl space-y-4 flex-1 flex flex-col justify-between">
-                <div class="space-y-3">
-                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">전적 기록</h3>
-                    
-                    <div class="grid grid-cols-3 gap-2 text-center">
-                        <div class="bg-gray-950 p-2.5 rounded-xl border border-gray-800/60">
-                            <span class="text-2xs text-gray-500 block">승리</span>
-                            <span id="stat-wins" class="text-lg font-black text-emerald-400">0</span>
-                        </div>
-                        <div class="bg-gray-950 p-2.5 rounded-xl border border-gray-800/60">
-                            <span class="text-2xs text-gray-500 block">패배</span>
-                            <span id="stat-losses" class="text-lg font-black text-rose-400">0</span>
-                        </div>
-                        <div class="bg-gray-950 p-2.5 rounded-xl border border-gray-800/60">
-                            <span class="text-2xs text-gray-500 block">무승부</span>
-                            <span id="stat-draws" class="text-lg font-black text-gray-400">0</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Action Button Controls -->
-                <div class="space-y-2 pt-4 border-t border-gray-800/80">
-                    <div class="grid grid-cols-2 gap-2">
-                        <button onclick="undoMove()" class="px-3 py-2.5 bg-gray-950 border border-gray-800 hover:bg-gray-800 text-gray-300 text-xs rounded-xl font-semibold flex items-center justify-center gap-1.5 transition">
-                            <i data-lucide="undo" class="w-4 h-4"></i>한 수 무르기
-                        </button>
-                        <button onclick="showHint()" class="px-3 py-2.5 bg-gray-950 border border-gray-800 hover:bg-gray-800 text-gray-300 text-xs rounded-xl font-semibold flex items-center justify-center gap-1.5 transition">
-                            <i data-lucide="lightbulb" class="w-4 h-4"></i>힌트 보기
-                        </button>
-                    </div>
-                    <button onclick="resetGame()" class="w-full px-4 py-3 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 transition">
-                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>새 게임 시작하기
-                    </button>
-                </div>
-            </div>
-        </section>
-
-        <!-- Play Board Screen -->
-        <section class="flex-1 bg-gray-900 border border-gray-800 rounded-3xl p-4 sm:p-6 shadow-2xl flex flex-col items-center justify-center relative overflow-hidden board-shadow">
-            <!-- Background gradient glows -->
-            <div class="absolute -left-20 -top-20 w-64 h-64 bg-indigo-500/5 rounded-full filter blur-3xl"></div>
-            <div class="absolute -right-20 -bottom-20 w-64 h-64 bg-purple-500/5 rounded-full filter blur-3xl"></div>
+        <!-- Game Board -->
+        <div id="board-container">
+            <div id="board"></div>
             
-            <!-- Turn Header/Banner info for mobile screen sizes -->
-            <div class="w-full flex justify-between items-center mb-4 sm:hidden">
-                <span class="text-xs font-bold text-gray-400">싱글플레이 AI 오목</span>
-                <span id="turn-indicator-mobile" class="text-xs text-indigo-400 font-bold">내 차례 (흑돌)</span>
+            <!-- Game Over Overlay -->
+            <div id="game-over-overlay">
+                <h2 id="winner-text" class="text-3xl font-bold mb-4 text-gray-800">승리!</h2>
+                <button id="overlay-reset-btn" class="px-6 py-2 bg-indigo-600 text-white font-bold rounded-full hover:bg-indigo-700 transition shadow-lg text-lg">
+                    다시 하기
+                </button>
             </div>
+        </div>
+        
+        <!-- Instructions -->
+        <div class="mt-8 text-center text-gray-500 max-w-md">
+            <p>5개의 돌을 가로, 세로, 또는 대각선으로 먼저 연결하면 승리합니다.</p>
+        </div>
 
-            <!-- Omok Board Canvas Wrapper -->
-            <div class="relative w-full max-w-[620px] aspect-square flex items-center justify-center">
-                <canvas id="omok-canvas" class="w-full h-full rounded-2xl cursor-pointer bg-[#e4a853] shadow-inner transition duration-200"></canvas>
-            </div>
-
-            <div class="mt-4 flex flex-wrap justify-center gap-x-6 gap-y-1 text-center text-2xs text-gray-500 font-medium">
-                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-black"></span> 착수 지점을 클릭(터치)하면 오목돌이 가볍게 놓입니다.</span>
-                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-white"></span> 가로, 세로, 대각선 5줄을 먼저 이으면 승리합니다.</span>
-            </div>
-        </section>
     </main>
 
-    <!-- Custom Confirm Modal (Replaces standard window.confirm) -->
-    <div id="confirm-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/80 backdrop-blur-sm p-4 hidden">
-        <div class="bg-gray-900 border border-gray-800 rounded-3xl max-w-sm w-full p-6 text-center space-y-6 shadow-2xl animate-fadeIn">
-            <div class="w-16 h-16 rounded-full mx-auto flex items-center justify-center bg-amber-500/20 text-amber-400">
-                <i data-lucide="alert-triangle" class="w-8 h-8"></i>
-            </div>
-            
-            <div class="space-y-2">
-                <h3 class="text-xl font-extrabold text-white">대국 리셋 경고</h3>
-                <p class="text-gray-400 text-xs sm:text-sm leading-relaxed">진행 중인 대국이 취소되고 바둑판이 리셋됩니다. 변경하시겠습니까?</p>
-            </div>
-            
-            <div class="flex gap-2">
-                <button onclick="closeConfirmModal()" class="flex-1 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-bold rounded-xl transition">취소</button>
-                <button id="btn-confirm-proceed" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition">변경</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Custom Dialog Modal (Replaces standard window.alert) -->
-    <div id="game-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/80 backdrop-blur-sm p-4 hidden">
-        <div class="bg-gray-900 border border-gray-800 rounded-3xl max-w-sm w-full p-6 text-center space-y-6 shadow-2xl animate-fadeIn">
-            <div id="modal-icon-container" class="w-16 h-16 rounded-full mx-auto flex items-center justify-center">
-                <i id="modal-icon" class="w-8 h-8"></i>
-            </div>
-            
-            <div class="space-y-2">
-                <h3 id="modal-title" class="text-xl font-extrabold text-white">결과 메세지</h3>
-                <p id="modal-desc" class="text-gray-400 text-xs sm:text-sm leading-relaxed">상세 설명 설명...</p>
-            </div>
-            
-            <div class="flex gap-2">
-                <button onclick="closeModal()" class="flex-1 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-bold rounded-xl transition">닫기</button>
-                <button onclick="resetGameFromModal()" class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition">다시 도전</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Footer -->
-    <footer class="bg-gray-950 border-t border-gray-900 py-5 text-center text-xs text-gray-500">
-        <div class="max-w-7xl mx-auto px-4">
-            <p>© 2026 AI OMOK CHAMPIONSHIP. All rights reserved.</p>
-            <p class="mt-0.5">※ 고성능 휴리스틱 알고리즘이 적용된 최고 사양 1인용 연습 대국장입니다.</p>
-        </div>
-    </footer>
-
     <script>
-        // --- Core Audio Engine (Web Audio Synthesis for placing stones) ---
-        let audioCtx = null;
-        let soundEnabled = true;
+        const BOARD_SIZE = 10;
+        const PLAYER = 1; // Black
+        const AI = 2;     // White
+        const EMPTY = 0;
+        const WIN_CONDITION = 5;
 
-        function playPlacementSound(isWhite) {
-            if (!soundEnabled) return;
-            try {
-                // Initialize AudioContext lazily on user gesture to avoid browser security policy error
-                if (!audioCtx) {
-                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                }
-                if (audioCtx.state === 'suspended') {
-                    audioCtx.resume();
-                }
-                const osc = audioCtx.createOscillator();
-                const gainNode = audioCtx.createGain();
+        let board = [];
+        let currentPlayer = PLAYER;
+        let gameActive = true;
+        let lastMove = null;
 
-                osc.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
-
-                // Sound frequencies modeling wood-on-wood/stone snap
-                const baseFreq = isWhite ? 1200 : 900;
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(baseFreq, audioCtx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(120, audioCtx.currentTime + 0.15);
-
-                gainNode.gain.setValueAtTime(0.8, audioCtx.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.18);
-
-                osc.start();
-                osc.stop(audioCtx.currentTime + 0.2);
-            } catch (e) {
-                console.log("Audio synthesis not supported or blocked by user guest settings.");
-            }
-        }
-
-        // --- Game Engine Variables ---
-        let boardSize = 15; // 15x15 standard, or 19
-        let board = [];     // 0: empty, 1: black (player), 2: white (AI)
-        let moveHistory = []; // Tracks placed stones coordinates {x, y, player} for undo
-        let isPlayerTurn = true; // Player (Black) goes first
-        let isGameOver = false;
-        let aiDifficulty = 'normal'; // easy, normal, hard
-        let winStats = { wins: 0, losses: 0, draws: 0 };
-        let canvas, ctx;
-        let cellSize = 0;
-        let offset = 0;
-        let hoverCell = null;
-        let lastMove = null; // Highlighting the last placed stone
-        let hintCell = null; // AI Hint highlight
-        let pendingBoardSize = null; // Track size when waiting for confirm
-
-        // --- STREAMING_CHUNK: Game init logic ---
-        window.onload = function() {
-            lucide.createIcons();
-            canvas = document.getElementById('omok-canvas');
-            ctx = canvas.getContext('2d');
-            
-            // Set up resize handler
-            resizeCanvas();
-            window.addEventListener('resize', resizeCanvas);
-            
-            // Register interaction handlers
-            canvas.addEventListener('mousemove', onBoardMove);
-            canvas.addEventListener('mouseleave', onBoardLeave);
-            canvas.addEventListener('click', onBoardClick);
-
-            // Set up custom confirm listener
-            document.getElementById('btn-confirm-proceed').onclick = proceedBoardSizeChange;
-            
-            // Initialize boards
-            initGame();
-        };
-
-        function resizeCanvas() {
-            // Get proper size based on the fluid design wrapping grid
-            const container = canvas.parentElement;
-            const containerSize = container.clientWidth;
-            
-            // Device pixel ratio tuning for crisp retina drawing
-            const dpr = window.devicePixelRatio || 1;
-            canvas.width = containerSize * dpr;
-            canvas.height = containerSize * dpr;
-            ctx.scale(dpr, dpr);
-            
-            // Recalculate metrics
-            cellSize = containerSize / (boardSize + 1);
-            offset = cellSize;
-            
-            // Redraw board instantly
-            drawBoard();
-        }
+        const boardElement = document.getElementById('board');
+        const statusText = document.getElementById('status-text');
+        const turnIndicator = document.getElementById('turn-indicator');
+        const gameOverOverlay = document.getElementById('game-over-overlay');
+        const winnerText = document.getElementById('winner-text');
+        
+        // Buttons
+        document.getElementById('reset-btn').addEventListener('click', initGame);
+        document.getElementById('overlay-reset-btn').addEventListener('click', initGame);
 
         function initGame() {
-            board = Array(boardSize).fill(null).map(() => Array(boardSize).fill(0));
-            moveHistory = [];
-            isPlayerTurn = true;
-            isGameOver = false;
+            // Reset state
+            board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(EMPTY));
+            currentPlayer = PLAYER;
+            gameActive = true;
             lastMove = null;
-            hintCell = null;
-            updateTurnBanner();
-            drawBoard();
-        }
 
-        // --- STREAMING_CHUNK: Difficulty & settings handlers ---
-        function changeBoardSize(size) {
-            if (boardSize === size) return;
-            if (moveHistory.length > 0) {
-                pendingBoardSize = size;
-                document.getElementById('confirm-modal').classList.remove('hidden');
-                return;
-            }
-            applyBoardSize(size);
-        }
+            // Reset UI
+            boardElement.innerHTML = '';
+            boardElement.classList.add('player-turn'); // 플레이어 턴 활성화 (미리보기 표시용)
+            gameOverOverlay.classList.remove('show');
+            updateStatusText("플레이어(흑) 차례");
+            turnIndicator.className = "w-6 h-6 rounded-full shadow-md transition-colors duration-300 bg-black";
 
-        function closeConfirmModal() {
-            document.getElementById('confirm-modal').classList.add('hidden');
-            pendingBoardSize = null;
-        }
+            // Create grid cells
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    
+                    // Add preview stone element
+                    const preview = document.createElement('div');
+                    preview.className = 'preview-stone';
+                    cell.appendChild(preview);
 
-        function proceedBoardSizeChange() {
-            if (pendingBoardSize !== null) {
-                applyBoardSize(pendingBoardSize);
-            }
-            closeConfirmModal();
-        }
-
-        function applyBoardSize(size) {
-            boardSize = size;
-            
-            // Toggle button styles
-            document.querySelectorAll('.size-btn').forEach(btn => {
-                btn.classList.replace('border-indigo-500/30', 'border-transparent');
-                btn.classList.replace('bg-indigo-500/10', 'bg-gray-950');
-                btn.classList.replace('text-indigo-300', 'text-gray-400');
-            });
-            const activeBtn = document.getElementById(`btn-size-${size}`);
-            if (activeBtn) {
-                activeBtn.classList.replace('border-transparent', 'border-indigo-500/30');
-                activeBtn.classList.replace('bg-gray-950', 'bg-indigo-500/10');
-                activeBtn.classList.replace('text-gray-400', 'text-indigo-300');
-            }
-            
-            resizeCanvas();
-            initGame();
-        }
-
-        function changeDifficulty(diff) {
-            aiDifficulty = diff;
-            
-            document.querySelectorAll('.diff-btn').forEach(btn => {
-                btn.classList.replace('border-indigo-500/30', 'border-transparent');
-                btn.classList.replace('bg-indigo-500/10', 'bg-gray-950');
-                btn.classList.replace('text-indigo-300', 'text-gray-400');
-            });
-            
-            const activeBtn = document.getElementById(`btn-diff-${diff}`);
-            activeBtn.classList.replace('border-transparent', 'border-indigo-500/30');
-            activeBtn.classList.replace('bg-gray-950', 'bg-indigo-500/10');
-            activeBtn.classList.replace('text-gray-400', 'text-indigo-300');
-        }
-
-        function toggleSound() {
-            soundEnabled = !soundEnabled;
-            const btn = document.getElementById('sound-toggle-btn');
-            if (soundEnabled) {
-                btn.innerText = "ON";
-                btn.classList.replace('text-gray-500', 'text-indigo-400');
-            } else {
-                btn.innerText = "OFF";
-                btn.classList.replace('text-indigo-400', 'text-gray-500');
-            }
-        }
-
-        // --- STREAMING_CHUNK: Board visual rendering (Traditional Wood Texture style) ---
-        function drawBoard() {
-            if (!ctx) return;
-            const size = canvas.width / (window.devicePixelRatio || 1);
-            ctx.clearRect(0, 0, size, size);
-
-            // 1. Draw Wood Background
-            ctx.fillStyle = '#e4a853';
-            ctx.fillRect(0, 0, size, size);
-            
-            // Faint natural wood grain effect for premium feel
-            ctx.strokeStyle = 'rgba(130, 80, 20, 0.12)';
-            ctx.lineWidth = 1.5;
-            for (let i = -size; i < size; i += 28) {
-                ctx.beginPath();
-                ctx.moveTo(i, 0);
-                ctx.bezierCurveTo(i + 100, size / 3, i - 100, 2 * size / 3, i + 50, size);
-                ctx.stroke();
-            }
-
-            // 2. Draw Board Lines
-            ctx.strokeStyle = '#4e3312';
-            ctx.lineWidth = 1.2;
-
-            for (let i = 0; i < boardSize; i++) {
-                // Horizontal line
-                ctx.beginPath();
-                ctx.moveTo(offset, offset + i * cellSize);
-                ctx.lineTo(offset + (boardSize - 1) * cellSize, offset + i * cellSize);
-                ctx.stroke();
-
-                // Vertical line
-                ctx.beginPath();
-                ctx.moveTo(offset + i * cellSize, offset);
-                ctx.lineTo(offset + i * cellSize, offset + (boardSize - 1) * cellSize);
-                ctx.stroke();
-            }
-
-            // 3. Draw Star Points (화점 - standard markers)
-            ctx.fillStyle = '#4e3312';
-            const starRadius = 3.5;
-            const getPoints = (size) => {
-                if (size === 15) return [3, 7, 11];
-                if (size === 19) return [3, 9, 15];
-                return [];
-            };
-            const points = getPoints(boardSize);
-            points.forEach(x => {
-                points.forEach(y => {
-                    ctx.beginPath();
-                    ctx.arc(offset + x * cellSize, offset + y * cellSize, starRadius, 0, 2 * Math.PI);
-                    ctx.fill();
-                });
-            });
-
-            // 4. Draw Hint Marker (if calculated)
-            if (hintCell) {
-                ctx.fillStyle = 'rgba(239, 68, 68, 0.4)'; // Red pulse hint
-                ctx.beginPath();
-                ctx.arc(offset + hintCell.x * cellSize, offset + hintCell.y * cellSize, cellSize * 0.4, 0, 2 * Math.PI);
-                ctx.fill();
-            }
-
-            // 5. Draw Hover Guide Indicator (semi-transparent phantom stone)
-            if (hoverCell && isPlayerTurn && !isGameOver) {
-                if (board[hoverCell.y][hoverCell.x] === 0) {
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-                    ctx.beginPath();
-                    ctx.arc(offset + hoverCell.x * cellSize, offset + hoverCell.y * cellSize, cellSize * 0.42, 0, 2 * Math.PI);
-                    ctx.fill();
+                    cell.addEventListener('click', () => handleCellClick(r, c));
+                    boardElement.appendChild(cell);
                 }
             }
+        }
 
-            // 6. Draw Placed Stones with elegant 3D gradient look
-            for (let y = 0; y < boardSize; y++) {
-                for (let x = 0; x < boardSize; x++) {
-                    const stoneType = board[y][x];
-                    if (stoneType !== 0) {
-                        const px = offset + x * cellSize;
-                        const py = offset + y * cellSize;
-                        const radius = cellSize * 0.44;
+        function handleCellClick(row, col) {
+            if (!gameActive || currentPlayer !== PLAYER || board[row][col] !== EMPTY) return;
 
-                        // Create realistic spherical radial gradients
-                        const grad = ctx.createRadialGradient(
-                            px - radius * 0.25, py - radius * 0.25, radius * 0.1,
-                            px, py, radius
-                        );
+            placeStone(row, col, PLAYER);
+            
+            if (checkWin(row, col, PLAYER)) {
+                endGame(PLAYER);
+                return;
+            }
+            if (checkDraw()) {
+                endGame(EMPTY);
+                return;
+            }
 
-                        if (stoneType === 1) { // Black stone
-                            grad.addColorStop(0, '#555555');
-                            grad.addColorStop(0.3, '#1a1a1a');
-                            grad.addColorStop(1, '#080808');
-                            
-                            // Soft bottom shadow for stone realism
-                            ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-                            ctx.shadowBlur = 6;
-                            ctx.shadowOffsetX = 2;
-                            ctx.shadowOffsetY = 3;
-                        } else { // White stone
-                            grad.addColorStop(0, '#ffffff');
-                            grad.addColorStop(0.2, '#fcfcfc');
-                            grad.addColorStop(0.8, '#dedede');
-                            grad.addColorStop(1, '#cccccc');
+            currentPlayer = AI;
+            boardElement.classList.remove('player-turn'); // AI 턴에는 미리보기 숨김
+            updateStatusText("AI(백) 생각 중...");
+            turnIndicator.className = "w-6 h-6 rounded-full shadow-md transition-colors duration-300 bg-white border border-gray-300";
+            
+            // Small delay for AI to make it feel natural
+            setTimeout(makeAIMove, 300);
+        }
 
-                            ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
-                            ctx.shadowBlur = 4;
-                            ctx.shadowOffsetX = 1.5;
-                            ctx.shadowOffsetY = 2.5;
-                        }
+        function placeStone(row, col, player) {
+            board[row][col] = player;
+            lastMove = { row, col, player };
 
-                        ctx.beginPath();
-                        ctx.arc(px, py, radius, 0, 2 * Math.PI);
-                        ctx.fillStyle = grad;
-                        ctx.fill();
+            // Find the cell element
+            const index = row * BOARD_SIZE + col;
+            const cell = boardElement.children[index];
+            cell.classList.add('occupied');
 
-                        // Reset shadow configs to prevent leakage
-                        ctx.shadowColor = 'transparent';
-                        ctx.shadowBlur = 0;
-                        ctx.shadowOffsetX = 0;
-                        ctx.shadowOffsetY = 0;
+            // Create stone element
+            const stone = document.createElement('div');
+            stone.className = `stone ${player === PLAYER ? 'black' : 'white'}`;
+            
+            // Remove 'recent' highlight from all other stones
+            document.querySelectorAll('.stone').forEach(s => s.classList.remove('recent'));
+            stone.classList.add('recent');
 
-                        // Draw thin subtle border highlight on white stone
-                        if (stoneType === 2) {
-                            ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
-                            ctx.lineWidth = 0.5;
-                            ctx.stroke();
+            cell.appendChild(stone);
+
+            // Trigger reflow for animation
+            void stone.offsetWidth;
+            stone.classList.add('placed');
+        }
+
+        function makeAIMove() {
+            if (!gameActive) return;
+
+            const bestMove = calculateBestMove();
+            placeStone(bestMove.r, bestMove.c, AI);
+
+            if (checkWin(bestMove.r, bestMove.c, AI)) {
+                endGame(AI);
+                return;
+            }
+            if (checkDraw()) {
+                endGame(EMPTY);
+                return;
+            }
+
+            currentPlayer = PLAYER;
+            boardElement.classList.add('player-turn'); // 플레이어 턴 미리보기 활성화
+            updateStatusText("플레이어(흑) 차례");
+            turnIndicator.className = "w-6 h-6 rounded-full shadow-md transition-colors duration-300 bg-black";
+        }
+
+        // Basic AI: Evaluate all empty cells based on threats and opportunities
+        function calculateBestMove() {
+            let maxScore = -Infinity;
+            let bestMoves = [];
+
+            // If board is empty, play roughly in middle
+            let emptyCount = 0;
+            for(let r=0; r<BOARD_SIZE; r++) for(let c=0; c<BOARD_SIZE; c++) if(board[r][c]===EMPTY) emptyCount++;
+            if(emptyCount === BOARD_SIZE*BOARD_SIZE) return {r: Math.floor(BOARD_SIZE/2), c: Math.floor(BOARD_SIZE/2)};
+
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] === EMPTY) {
+                        // Evaluate score for this cell
+                        let score = evaluateCell(r, c);
+                        
+                        if (score > maxScore) {
+                            maxScore = score;
+                            bestMoves = [{ r, c }];
+                        } else if (score === maxScore) {
+                            bestMoves.push({ r, c });
                         }
                     }
                 }
             }
 
-            // 7. Highlight the last placed move with small distinct indicator
-            if (lastMove) {
-                const px = offset + lastMove.x * cellSize;
-                const py = offset + lastMove.y * cellSize;
-                ctx.fillStyle = lastMove.player === 1 ? '#ffffff' : '#ff0000';
-                ctx.beginPath();
-                ctx.arc(px, py, 3.5, 0, 2 * Math.PI);
-                ctx.fill();
-            }
+            // Pick randomly from best moves to add slight variety
+            return bestMoves[Math.floor(Math.random() * bestMoves.length)];
         }
 
-        // --- STREAMING_CHUNK: User interaction mouse handlers ---
-        function onBoardMove(e) {
-            if (isGameOver) return;
-            const rect = canvas.getBoundingClientRect();
-            // Translate page coordinates to local canvas spaces
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-
-            // Align to closest grid intersection
-            const col = Math.round((x - offset) / cellSize);
-            const row = Math.round((y - offset) / cellSize);
-
-            if (col >= 0 && col < boardSize && row >= 0 && row < boardSize) {
-                if (!hoverCell || hoverCell.x !== col || hoverCell.y !== row) {
-                    hoverCell = { x: col, y: row };
-                    drawBoard();
-                }
-            } else {
-                if (hoverCell) {
-                    hoverCell = null;
-                    drawBoard();
-                }
-            }
-        }
-
-        function onBoardLeave() {
-            if (hoverCell) {
-                hoverCell = null;
-                drawBoard();
-            }
-        }
-
-        // --- STREAMING_CHUNK: Click move logic & turns ---
-        function onBoardClick() {
-            if (!isPlayerTurn || isGameOver || !hoverCell) return;
+        function evaluateCell(r, c) {
+            let score = 0;
             
-            const { x, y } = hoverCell;
-            if (board[y][x] !== 0) return; // Intersection must be empty
-
-            makeMove(x, y, 1); // 1 is Player (Black)
+            // Evaluate for AI (offense)
+            score += evaluateDirection(r, c, AI) * 1.1; // Slight preference to win than block
             
-            if (checkWin(x, y, 1)) {
-                endGame(1);
-                return;
-            }
+            // Evaluate for Player (defense - blocking)
+            score += evaluateDirection(r, c, PLAYER);
 
-            if (checkDraw()) {
-                endGame(0);
-                return;
-            }
+            // Favor center slightly over edges
+            let centerDist = Math.abs(r - BOARD_SIZE/2) + Math.abs(c - BOARD_SIZE/2);
+            score -= centerDist * 0.1;
 
-            // Pass turn to Computer AI
-            isPlayerTurn = false;
-            updateTurnBanner();
-            
-            // Let the computer calculate a responsive move with delay
-            setTimeout(triggerComputerTurn, 450);
+            return score;
         }
 
-        function makeMove(x, y, player) {
-            board[y][x] = player;
-            lastMove = { x, y, player };
-            moveHistory.push({ x, y, player });
-            hintCell = null; // Clear previous hints
-            playPlacementSound(player === 2);
-            drawBoard();
-        }
-
-        function triggerComputerTurn() {
-            if (isGameOver) return;
-            
-            const bestMove = evaluateBestMove();
-            if (bestMove) {
-                makeMove(bestMove.x, bestMove.y, 2); // 2 is Computer AI (White)
-                
-                if (checkWin(bestMove.x, bestMove.y, 2)) {
-                    endGame(2);
-                    return;
-                }
-
-                if (checkDraw()) {
-                    endGame(0);
-                    return;
-                }
-
-                isPlayerTurn = true;
-                updateTurnBanner();
-            }
-        }
-
-        // --- STREAMING_CHUNK: Move history utilities (Undo/Hint) ---
-        function undoMove() {
-            if (moveHistory.length < 2 || isGameOver) return;
-            
-            // Undo Computer turn and Player turn
-            const lastAI = moveHistory.pop();
-            board[lastAI.y][lastAI.x] = 0;
-
-            const lastPlayer = moveHistory.pop();
-            board[lastPlayer.y][lastPlayer.x] = 0;
-
-            // Re-establish last move highlight
-            if (moveHistory.length > 0) {
-                lastMove = moveHistory[moveHistory.length - 1];
-            } else {
-                lastMove = null;
-            }
-
-            hintCell = null;
-            isPlayerTurn = true;
-            updateTurnBanner();
-            drawBoard();
-        }
-
-        function showHint() {
-            if (!isPlayerTurn || isGameOver) return;
-            const bestMove = getHeuristicScoresForPlayer(1);
-            if (bestMove) {
-                hintCell = bestMove;
-                drawBoard();
-            }
-        }
-
-        // --- STREAMING_CHUNK: Game Win Condition Evaluator ---
-        function checkWin(cx, cy, player) {
+        function evaluateDirection(r, c, player) {
             const directions = [
-                { dx: 1, dy: 0 },  // Horizontal
-                { dx: 0, dy: 1 },  // Vertical
-                { dx: 1, dy: 1 },  // Diagonal Down-Right
-                { dx: 1, dy: -1 }  // Diagonal Up-Right
+                [0, 1],  // Horizontal
+                [1, 0],  // Vertical
+                [1, 1],  // Diagonal \
+                [1, -1]  // Diagonal /
             ];
 
-            for (let d of directions) {
-                let count = 1;
+            let totalScore = 0;
 
-                // Forwards
-                let tx = cx + d.dx;
-                let ty = cy + d.dy;
-                while (tx >= 0 && tx < boardSize && ty >= 0 && ty < boardSize && board[ty][tx] === player) {
-                    count++;
-                    tx += d.dx;
-                    ty += d.dy;
+            for (let [dr, dc] of directions) {
+                let count = 1; // Count the stone we are pretending to place
+                let openEnds = 0;
+
+                // Check one direction
+                let i = 1;
+                while (true) {
+                    let nr = r + dr * i;
+                    let nc = c + dc * i;
+                    if (nr < 0 || nr >= BOARD_SIZE || nc < 0 || nc >= BOARD_SIZE) break;
+                    if (board[nr][nc] === player) {
+                        count++;
+                    } else if (board[nr][nc] === EMPTY) {
+                        openEnds++;
+                        break;
+                    } else {
+                        break; // Blocked by opponent
+                    }
+                    i++;
                 }
 
-                // Backwards
-                tx = cx - d.dx;
-                ty = cy - d.dy;
-                while (tx >= 0 && tx < boardSize && ty >= 0 && ty < boardSize && board[ty][tx] === player) {
-                    count++;
-                    tx -= d.dx;
-                    ty -= d.dy;
+                // Check opposite direction
+                i = 1;
+                while (true) {
+                    let nr = r - dr * i;
+                    let nc = c - dc * i;
+                    if (nr < 0 || nr >= BOARD_SIZE || nc < 0 || nc >= BOARD_SIZE) break;
+                    if (board[nr][nc] === player) {
+                        count++;
+                    } else if (board[nr][nc] === EMPTY) {
+                        openEnds++;
+                        break;
+                    } else {
+                        break; // Blocked by opponent
+                    }
+                    i++;
                 }
 
-                if (count >= 5) return true;
+                // Score based on count and open ends
+                if (count >= 5) totalScore += 100000; // Win
+                else if (count === 4 && openEnds === 2) totalScore += 10000; // Guaranteed win next turn
+                else if (count === 4 && openEnds === 1) totalScore += 1000;
+                else if (count === 3 && openEnds === 2) totalScore += 500;
+                else if (count === 3 && openEnds === 1) totalScore += 100;
+                else if (count === 2 && openEnds === 2) totalScore += 50;
+                else if (count === 2 && openEnds === 1) totalScore += 10;
+                else if (count === 1 && openEnds === 2) totalScore += 1;
+            }
+
+            return totalScore;
+        }
+
+        function checkWin(r, c, player) {
+            const directions = [
+                [0, 1], [1, 0], [1, 1], [1, -1]
+            ];
+
+            for (let [dr, dc] of directions) {
+                let count = 1; // Start with the stone just placed
+
+                // Check positive direction
+                for (let i = 1; i < WIN_CONDITION; i++) {
+                    let nr = r + dr * i;
+                    let nc = c + dc * i;
+                    if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === player) {
+                        count++;
+                    } else {
+                        break;
+                    }
+                }
+
+                // Check negative direction
+                for (let i = 1; i < WIN_CONDITION; i++) {
+                    let nr = r - dr * i;
+                    let nc = c - dc * i;
+                    if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === player) {
+                        count++;
+                    } else {
+                        break;
+                    }
+                }
+
+                if (count >= WIN_CONDITION) return true;
             }
             return false;
         }
 
         function checkDraw() {
-            // Check if board is full
-            for (let y = 0; y < boardSize; y++) {
-                for (let x = 0; x < boardSize; x++) {
-                    if (board[y][x] === 0) return false;
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] === EMPTY) return false;
                 }
             }
             return true;
         }
 
-        // --- STREAMING_CHUNK: Turn status visuals updater ---
-        function updateTurnBanner() {
-            const banner = document.getElementById('turn-banner');
-            const pCard = document.getElementById('player-card');
-            const aiCard = document.getElementById('ai-card');
-            const mobileIndicator = document.getElementById('turn-indicator-mobile');
-
-            if (isGameOver) {
-                banner.innerHTML = `<span class="text-gray-500">대전이 종료되었습니다.</span>`;
-                pCard.className = "bg-gray-950/40 border border-transparent rounded-xl p-3 flex flex-col items-center transition-all";
-                aiCard.className = "bg-gray-950/40 border border-transparent rounded-xl p-3 flex flex-col items-center transition-all";
-                return;
-            }
-
-            if (isPlayerTurn) {
-                banner.innerHTML = `<span class="inline-block w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></span> 당신의 차례입니다`;
-                pCard.className = "bg-indigo-950/40 border border-indigo-500/50 rounded-xl p-3 flex flex-col items-center transition-all shadow-lg scale-102";
-                aiCard.className = "bg-gray-950/40 border border-transparent rounded-xl p-3 flex flex-col items-center transition-all";
-                mobileIndicator.innerText = "내 차례 (흑돌)";
-                mobileIndicator.className = "text-xs text-indigo-400 font-bold";
-            } else {
-                banner.innerHTML = `<span class="inline-block w-2.5 h-2.5 rounded-full bg-purple-500 animate-bounce"></span> AI가 계산하는 중...`;
-                pCard.className = "bg-gray-950/40 border border-transparent rounded-xl p-3 flex flex-col items-center transition-all";
-                aiCard.className = "bg-purple-950/40 border border-purple-500/50 rounded-xl p-3 flex flex-col items-center transition-all shadow-lg scale-102";
-                mobileIndicator.innerText = "AI 생각중... (백돌)";
-                mobileIndicator.className = "text-xs text-purple-400 font-bold";
-            }
-        }
-
-        // --- STREAMING_CHUNK: High-Performance Heuristic AI Brain ---
-        function evaluateBestMove() {
-            return getHeuristicScoresForPlayer(2); // Find best move for Computer
-        }
-
-        // Intelligent weight evaluation algorithm (Calculates offensive & defensive strategic weights)
-        function getHeuristicScoresForPlayer(activePlayer) {
-            const size = boardSize;
-            let bestScore = -1;
-            let candidates = [];
-
-            // Quick lookup lists for performance optimizations
-            for (let y = 0; y < size; y++) {
-                for (let x = 0; x < size; x++) {
-                    if (board[y][x] !== 0) continue; // Check empty cells only
-
-                    // Position weight (Higher bias towards centering strategies)
-                    const centerDist = Math.abs(x - Math.floor(size/2)) + Math.abs(y - Math.floor(size/2));
-                    const posWeight = (size - centerDist) * 1.5;
-
-                    const aiScore = getCellScore(x, y, 2); // Attack weight
-                    const playerScore = getCellScore(x, y, 1); // Defense weight
-
-                    // Combined heuristic calculation based on selected difficulty settings
-                    let totalScore = 0;
-                    if (aiDifficulty === 'easy') {
-                        totalScore = aiScore * 0.6 + playerScore * 0.4 + posWeight * 0.2;
-                    } else if (aiDifficulty === 'normal') {
-                        totalScore = aiScore * 1.0 + playerScore * 0.85 + posWeight * 0.5;
-                    } else { // Hard (Deep defensive blocks prioritized, aggressive counter-attacks)
-                        totalScore = aiScore * 1.0 + playerScore * 1.2 + posWeight * 0.5;
-                        // Fast win checking override
-                        if (aiScore >= 50000) totalScore += 1000000;
-                        if (playerScore >= 50000) totalScore += 500000;
-                    }
-
-                    if (totalScore > bestScore) {
-                        bestScore = totalScore;
-                        candidates = [{ x, y }];
-                    } else if (Math.abs(totalScore - bestScore) < 0.01) {
-                        candidates.push({ x, y });
-                    }
-                }
-            }
-
-            // Return a randomized candidate among equals to keep game non-repetitive
-            if (candidates.length > 0) {
-                return candidates[Math.floor(Math.random() * candidates.length)];
-            }
-            return null;
-        }
-
-        // Checks configurations of lines intersecting at x,y
-        function getCellScore(cx, cy, player) {
-            const directions = [
-                { dx: 1, dy: 0 },
-                { dx: 0, dy: 1 },
-                { dx: 1, dy: 1 },
-                { dx: 1, dy: -1 }
-            ];
-
-            let score = 0;
-
-            for (let d of directions) {
-                let count = 1;
-                let openEnds = 0;
-
-                // Forward Check
-                let tx = cx + d.dx;
-                let ty = cy + d.dy;
-                while (tx >= 0 && tx < boardSize && ty >= 0 && ty < boardSize && board[ty][tx] === player) {
-                    count++;
-                    tx += d.dx;
-                    ty += d.dy;
-                }
-                if (tx >= 0 && tx < boardSize && ty >= 0 && ty < boardSize && board[ty][tx] === 0) {
-                    openEnds++;
-                }
-
-                // Backward Check
-                tx = cx - d.dx;
-                ty = cy - d.dy;
-                while (tx >= 0 && tx < boardSize && ty >= 0 && ty < boardSize && board[ty][tx] === player) {
-                    count++;
-                    tx -= d.dx;
-                    ty -= d.dy;
-                }
-                if (tx >= 0 && tx < boardSize && ty >= 0 && ty < boardSize && board[ty][tx] === 0) {
-                    openEnds++;
-                }
-
-                // Weight Table for classic Gomoku patterns
-                score += getPatternWeight(count, openEnds);
-            }
-
-            return score;
-        }
-
-        function getPatternWeight(count, openEnds) {
-            if (count >= 5) return 100000; // Immediate 5 in a row (Win)
-            
-            if (count === 4) {
-                if (openEnds === 2) return 15000; // Open 4 (Unstoppable win threat)
-                if (openEnds === 1) return 2500;  // Closed 4
-            }
-            if (count === 3) {
-                if (openEnds === 2) return 3000;  // Open 3
-                if (openEnds === 1) return 500;   // Closed 3
-            }
-            if (count === 2) {
-                if (openEnds === 2) return 400;   // Open 2
-                if (openEnds === 1) return 80;    // Closed 2
-            }
-            if (count === 1) {
-                if (openEnds === 2) return 10;
-            }
-            return 0;
-        }
-
-        // --- STREAMING_CHUNK: End of game logic & score tracking ---
         function endGame(winner) {
-            isGameOver = true;
-            updateTurnBanner();
-
-            const modal = document.getElementById('game-modal');
-            const iconContainer = document.getElementById('modal-icon-container');
-            const title = document.getElementById('modal-title');
-            const desc = document.getElementById('modal-desc');
-
-            if (winner === 1) { // Player won
-                winStats.wins++;
-                document.getElementById('stat-wins').innerText = winStats.wins;
-                
-                iconContainer.className = "w-16 h-16 rounded-full mx-auto flex items-center justify-center bg-emerald-500/20 text-emerald-400";
-                iconContainer.innerHTML = '<i data-lucide="trophy" class="w-8 h-8"></i>';
-                title.innerText = "빛나는 대승리! 🎉";
-                desc.innerText = "뛰어난 오목 수읽기로 AI의 방어를 무너뜨리고 장렬하게 승리했습니다. 축하합니다!";
-            } else if (winner === 2) { // AI won
-                winStats.losses++;
-                document.getElementById('stat-losses').innerText = winStats.losses;
-
-                iconContainer.className = "w-16 h-16 rounded-full mx-auto flex items-center justify-center bg-rose-500/20 text-rose-400";
-                iconContainer.innerHTML = '<i data-lucide="skull" class="w-8 h-8"></i>';
-                title.innerText = "패배했습니다... 😢";
-                desc.innerText = "인공지능의 노련한 일격에 패배했습니다. 전술을 정비하여 다시 한번 정교하게 도전해 보세요!";
-            } else { // Draw
-                winStats.draws++;
-                document.getElementById('stat-draws').innerText = winStats.draws;
-
-                iconContainer.className = "w-16 h-16 rounded-full mx-auto flex items-center justify-center bg-gray-500/20 text-gray-400";
-                iconContainer.innerHTML = '<i data-lucide="scale" class="w-8 h-8"></i>';
-                title.innerText = "무승부 대국 🤝";
-                desc.innerText = "바둑판에 모든 공간이 꽉 찼습니다. 두 경쟁자 모두 흔들림 없는 명국을 수놓았습니다.";
+            gameActive = false;
+            boardElement.classList.remove('player-turn'); // 게임 종료 시 미리보기 숨김
+            
+            if (winner === PLAYER) {
+                winnerText.textContent = "플레이어 승리!";
+                winnerText.className = "text-3xl font-bold mb-4 text-black";
+                updateStatusText("플레이어가 승리했습니다!");
+            } else if (winner === AI) {
+                winnerText.textContent = "인공지능 승리!";
+                winnerText.className = "text-3xl font-bold mb-4 text-gray-600";
+                updateStatusText("인공지능이 승리했습니다.");
+            } else {
+                winnerText.textContent = "무승부";
+                winnerText.className = "text-3xl font-bold mb-4 text-gray-800";
+                updateStatusText("무승부입니다.");
             }
 
-            // Repopulate icons inside dynamic modal elements
-            lucide.createIcons();
-            
-            // Show Modal dialog
-            modal.classList.remove('hidden');
+            gameOverOverlay.classList.add('show');
         }
 
-        function closeModal() {
-            document.getElementById('game-modal').classList.add('hidden');
+        function updateStatusText(text) {
+            statusText.textContent = text;
         }
 
-        function resetGame() {
-            initGame();
-        }
+        // Initialize game when page loads
+        window.addEventListener('DOMContentLoaded', initGame);
 
-        function resetGameFromModal() {
-            closeModal();
-            initGame();
-        }
     </script>
 </body>
 </html>
